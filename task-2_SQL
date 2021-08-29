@@ -1,0 +1,85 @@
+CREATE TABLE master.dbo.SchedulerFromCsv (
+ 	Name nvarchar(11) COLLATE SQL_Latin1_General_CP1251_CI_AS NOT NULL,
+ 	Sheduler nvarchar(8) COLLATE SQL_Latin1_General_CP1251_CI_AS NOT NULL,
+ 	Date_begin date NULL,
+ 	Date_end date NULL
+);
+insert into SchedulerFromCsv (Name, Sheduler, Date_begin, Date_end) VALUES 
+  (N'Поставщик 1',N'дддвсвнн',cast('2019-01-01 00:00:00' as date),cast('2019-01-10 00:00:00' as date)),
+  (N'Поставщик 1',N'ннвннв',cast('2019-01-11 00:00:00' as date),cast('2019-01-15 00:00:00' as date)),
+  (N'Поставщик 1',N'св',cast('2019-01-16 00:00:00' as date),cast('2019-01-20 00:00:00' as date)),
+  (N'Поставщик 2',N'свсвсв',cast('2019-01-01 00:00:00' as date),cast('2019-01-07 00:00:00' as date)),
+  (N'Поставщик 2',N'днвсв',cast('2019-01-08 00:00:00' as date),cast('2019-01-14 00:00:00' as date)),
+  (N'Поставщик 2',N'ннддвсв',cast('2019-01-15 00:00:00' as date),cast('9999-12-31 00:00:00' as date)),
+  (N'Поставщик 3',N'нвнвнв',cast('2019-01-01 00:00:00' as date),cast('2019-02-01 00:00:00' as date)),
+  (N'Поставщик 3',N'двдвдвдв',cast('2019-02-02 00:00:00' as date),cast('9999-12-31 00:00:00' as date))
+;
+CREATE TABLE SUPPLIER(
+ID INTEGER NOT NULL  PRIMARY  KEY IDENTITY(1,1),
+Name VARCHAR(100) collate SQL_Latin1_General_CP1251_CI_AS NOT NULL)
+INSERT into Supplier(Name) 
+SELECT  DISTINCT  Name FROM SchedulerFromCsv
+-- SQL_Latin1_General_CP1251_CI_AS
+CREATE TABLE T_CONTRACTOR_SHEDULER(
+   ID INTEGER NOT NULL  PRIMARY  KEY IDENTITY(1,1),
+   ID_NAME INTEGER NOT NULL,
+   SHEDULE VARCHAR(100) collate SQL_Latin1_General_CP1251_CI_AS NOT NULL,
+   DATE_BEGIN DATE NOT NULL,
+   DATE_END DATE,
+   FOREIGN KEY (ID_NAME) REFERENCES Supplier(ID),
+   CHECK (DATE_BEGIN <= DATE_END),
+   UNIQUE (ID_NAME, DATE_BEGIN)
+);
+INSERT INTO T_CONTRACTOR_SHEDULER(ID_NAME, SHEDULE, DATE_BEGIN, DATE_END)
+SELECT s.ID, c.sheduler, c.date_begin, c.Date_end
+FROM SchedulerFromCsv c
+LEFT JOIN Supplier s on s.Name = c.Name
+drop table if exists WorkingHours
+CREATE TABLE WorkingHours(
+ID INTEGER NOT  NULL PRIMARY KEY IDENTITY(1,1),
+Symbol CHAR(1) collate SQL_Latin1_General_CP1251_CI_AS NOT NULL,
+Start int NOT NULL,
+Duration int NOT NULL,
+Check(Duration > 0)
+);
+INSERT INTO WorkingHours(Symbol, Start, Duration)
+VALUES (N'с',  8, 24);
+INSERT INTO WorkingHours(Symbol, Start, Duration)
+VALUES (N'д',  8, 12);
+INSERT INTO WorkingHours(Symbol, Start, Duration)
+VALUES (N'н',  20, 12)
+drop table if exists T_CONTRACTOR_WORK_DAY
+CREATE TABLE T_CONTRACTOR_WORK_DAY(
+   ID INTEGER NOT NULL  PRIMARY  KEY IDENTITY(1,1),
+   NAME VARCHAR(100) collate SQL_Latin1_General_CP1251_CI_AS NOT NULL,
+   DATE_BEGIN datetime,
+   DATE_END datetime
+);
+drop procedure if exists [dbo].[CreateSchedule];
+CREATE procedure [dbo].[CreateSchedule] @StartDate Date, @EndDate Date
+as
+begin
+truncate table T_CONTRACTOR_WORK_DAY;
+with calendar as(
+select @StartDate dt
+UNION ALL
+select DATEADD(day, 1, dt) from calendar
+where dt<@EndDate
+)
+insert into T_CONTRACTOR_WORK_DAY(NAME,DATE_BEGIN,DATE_END)
+select s.Name, DATEADD(HH, w.Start, cast(c.dt as datetime)) DATE_BEGIN, DATEADD(HH, w.Start+w.Duration, cast(c.dt as datetime)) DATE_END from calendar c
+cross join SUPPLIER s
+left join [master].[dbo].[T_CONTRACTOR_SHEDULER] sch on sch.ID_NAME=s.ID and c.dt between sch.DATE_BEGIN and sch.DATE_END
+join WorkingHours w on w.Symbol = SUBSTRING(SHEDULE, (DATEDIFF(day, sch.DATE_BEGIN, c.dt) + LEN(sch.SHEDULE)) % LEN(sch.SHEDULE) + 1 , 1)
+option(maxrecursion 10000)
+end;
+exec [master].[dbo].[CreateSchedule] @StartDate = '2019-01-01', @EndDate = '2019-08-28';
+
+SELECT Name, count(*) as [DayCount] FROM [master].[dbo].[T_CONTRACTOR_WORK_DAY]
+group by Name
+SELECT Name FROM [master].[dbo].[T_CONTRACTOR_WORK_DAY]
+where FORMAT(DATE_BEGIN, 'yyyy-MM')='2019-01'
+group by Name
+having count(*)>10
+SELECT distinct NAME FROM [master].[dbo].[T_CONTRACTOR_WORK_DAY]
+where FORMAT(DATE_BEGIN, 'yyyy-MM-dd') in ('2019-01-14', '2019-01-15', '2019-01-16')
